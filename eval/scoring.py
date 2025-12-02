@@ -12,7 +12,12 @@ import httpx
 
 from eval.models import EvalQuestion, ScoringMode
 from eval.observability import traced_span
-from lmnr import observe
+
+# Optional lmnr import (for tracing)
+try:
+    from lmnr import observe
+except ImportError:
+    observe = None
 
 
 class ScoringError(Exception):
