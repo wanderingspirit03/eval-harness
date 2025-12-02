@@ -1,0 +1,27 @@
+# Forecasting Rubric Evaluation Suite
+# Tests LLM-as-judge scoring for forecasting and prediction tasks
+
+name: forecasting_rubric
+version: "1.0.0"
+
+# Question IDs from the eval_questions table (forecasting rubric questions)
+question_ids:
+  - forecasting_market_analysis
+  - forecasting_technology_adoption
+
+# Concurrency and timing
+max_concurrency: 2
+task_timeout_seconds: 360.0
+poll_interval_seconds: 3.0
+
+# Pass/fail threshold
+success_threshold: 0.65
+
+# Additional metadata
+metadata:
+  description: "Rubric-based evaluation for forecasting tasks using LLM-as-judge (gpt-5.1-2025-11-13)"
+  cost_estimate: "moderate-expensive"
+  expected_duration_minutes: 20
+  scoring_mode: "rubric"
+  judge_model: "gpt-5.1-2025-11-13"
+  work_areas: ["forecasting"]

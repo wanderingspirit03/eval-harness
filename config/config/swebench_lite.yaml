@@ -1,0 +1,30 @@
+# SWE-bench Lite Evaluation Suite
+# Tests real GitHub issue resolution from the SWE-bench Lite dataset
+
+name: swebench_lite
+version: "1.0.0"
+
+# Question IDs from SWE-bench Lite (dev split, first 5)
+# Seeded via: python -m app.eval.swebench_loader --split dev --limit 5
+question_ids:
+  - swebench_sqlfluff__sqlfluff_1625
+  - swebench_sqlfluff__sqlfluff_2419
+  - swebench_sqlfluff__sqlfluff_1733
+  - swebench_sqlfluff__sqlfluff_1517
+  - swebench_sqlfluff__sqlfluff_1763
+
+# Lower concurrency - these tasks are resource-intensive
+max_concurrency: 1
+task_timeout_seconds: 600.0  # 10 minutes per task
+poll_interval_seconds: 5.0
+
+# Lower threshold - SWE-bench is challenging
+success_threshold: 0.3
+
+metadata:
+  description: "SWE-bench Lite evaluation - real GitHub issue resolution"
+  cost_estimate: "expensive"
+  expected_duration_minutes: 60
+  scoring_mode: "test_suite"
+  work_areas: ["swebench", "eng"]
+  source: "huggingface:SWE-bench/SWE-bench_Lite"

@@ -1,0 +1,15 @@
+name: swebench_single
+version: "1.0"
+description: Single SWE-bench task for testing
+
+question_ids:
+  - swebench_pvlib__pvlib_python_1707
+
+max_concurrency: 1
+task_timeout_seconds: 600
+poll_interval_seconds: 5
+success_threshold: 0.5
+
+metadata:
+  category: swebench
+  purpose: end-to-end test

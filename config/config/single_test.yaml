@@ -1,0 +1,13 @@
+name: single_test
+version: "1.0.0"
+
+question_ids:
+  - I0_single_manager
+
+max_concurrency: 1
+task_timeout_seconds: 60.0
+poll_interval_seconds: 2.0
+success_threshold: 1.0
+
+metadata:
+  description: "Single question test"

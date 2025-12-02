@@ -1,0 +1,36 @@
+[project]
+name = "eval-harness"
+version = "0.1.0"
+description = "Evaluation harness for testing AI agent behavior via Task Gateway Service"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "supabase>=2.0.0",
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+tracing = [
+    "lmnr>=0.1.0",
+]
+datasets = [
+    "datasets>=2.14.0",
+]
+all = [
+    "lmnr>=0.1.0",
+    "datasets>=2.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+

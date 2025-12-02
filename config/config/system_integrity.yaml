@@ -1,0 +1,32 @@
+# System Integrity Eval Suite
+# Tests agent cluster invariants and system integrity
+
+name: system_integrity
+version: "1.0.0"
+
+# Question IDs from the eval_questions table
+question_ids:
+  - I16_action_observability
+  - I2_no_orphaned_engineers
+  - I3_agent_container_consistency
+  - I0_single_manager
+  - I21_agent_dag
+  - I4_task_agent_consistency
+  - I11_no_task_leaks
+  - I_combined_invariants
+  - I_race_condition_fix
+
+# Sequential execution for invariant tests (avoid interference)
+max_concurrency: 1
+task_timeout_seconds: 300.0
+poll_interval_seconds: 5.0
+
+# All tests must pass for the suite to pass
+success_threshold: 1.0
+
+# Additional metadata
+metadata:
+  description: "System integrity and invariant verification"
+  cost_estimate: "cheap"
+  expected_duration_minutes: 45
+  requires_isolated_env: true

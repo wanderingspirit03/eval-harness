@@ -1,0 +1,28 @@
+# Research Rubric Evaluation Suite
+# Tests LLM-as-judge scoring with weighted dimensions for research and analysis tasks
+
+name: research_rubric
+version: "1.0.0"
+
+# Question IDs from the eval_questions table (rubric-scored questions)
+question_ids:
+  - research_summary_quality
+  - research_methodology_critique
+  - research_literature_synthesis
+
+# Concurrency and timing (lower concurrency due to judge API rate limits)
+max_concurrency: 2
+task_timeout_seconds: 300.0
+poll_interval_seconds: 3.0
+
+# Pass/fail threshold (rubric scoring tends to be stricter)
+success_threshold: 0.7
+
+# Additional metadata
+metadata:
+  description: "Rubric-based evaluation for research tasks using LLM-as-judge (gpt-5.1-2025-11-13)"
+  cost_estimate: "moderate"
+  expected_duration_minutes: 15
+  scoring_mode: "rubric"
+  judge_model: "gpt-5.1-2025-11-13"
+  work_areas: ["research"]

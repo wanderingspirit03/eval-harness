@@ -1,0 +1,25 @@
+# Engineering Smoke Test Suite
+# A quick, low-cost suite for verifying basic agent functionality
+
+name: eng_smoke
+version: "1.0.0"
+
+# Question IDs from the eval_questions table
+question_ids:
+  - eng_bash_hello_world
+  - eng_json_parse_simple
+  - eng_file_read_basic
+
+# Concurrency and timing
+max_concurrency: 3
+task_timeout_seconds: 120.0
+poll_interval_seconds: 2.0
+
+# Pass/fail threshold
+success_threshold: 0.8
+
+# Additional metadata
+metadata:
+  description: "Quick smoke test for engineering tasks"
+  cost_estimate: "cheap"
+  expected_duration_minutes: 5

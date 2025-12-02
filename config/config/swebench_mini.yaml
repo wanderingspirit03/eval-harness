@@ -1,0 +1,15 @@
+# SWEbench-style mini evaluation
+
+name: swebench_mini
+version: "0.1.0"
+
+question_ids:
+  - swebench_mini_sum_even_fix
+
+max_concurrency: 1
+task_timeout_seconds: 300.0
+poll_interval_seconds: 2.0
+success_threshold: 0.8
+
+metadata:
+  description: "Single SWEbench-style bug-fix task using local swebench_sample module"
