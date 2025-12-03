@@ -195,24 +195,30 @@ async def run_evaluation(args: argparse.Namespace) -> int:
         supabase = get_supabase_client()
         controller = EvaluationController(
             supabase,
-            gateway_base_url=args.gateway_url or os.environ.get("GATEWAY_BASE_URL"),
+            gateway_base_url=None,  # Not used in seed/monitor flow
         )
 
         # Get baseline for regression comparison if requested
         baseline_run_id = None
-        if getattr(args, 'compare_baseline', False):
+        if getattr(args, "compare_baseline", False):
             detector = RegressionDetector(supabase)
             baseline_run_id = detector.get_latest_baseline(config.name)
             if baseline_run_id:
-                print(f"Will compare against baseline run: {str(baseline_run_id)[:8]}...")
+                print(
+                    f"Will compare against baseline run: {str(baseline_run_id)[:8]}..."
+                )
             else:
                 print("No baseline found for regression comparison")
 
         print(f"Starting evaluation: {config.name} v{config.version}")
-        print(f"Questions: {len(config.question_ids)}, Concurrency: {config.max_concurrency}")
-        print()
+        print(f"Questions: {len(config.question_ids)}")
+        print("Seeding evaluation tasks...")
 
-        summary = await controller.run_eval_suite(config)
+        run = await controller.seed_eval_suite(config)
+        print(f"Run seeded: {run.id}")
+        print("Monitoring execution...")
+
+        summary = await controller.monitor_eval_run(run.id)
 
         if args.json:
             print(format_json_summary(summary))

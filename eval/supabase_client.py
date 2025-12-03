@@ -428,6 +428,254 @@ class EvalSupabaseClient:
                 by_cost_tier=by_cost_tier,
             )
 
+    def bulk_insert_tasks(self, tasks: list[dict[str, Any]]) -> list[UUID]:
+        """Bulk insert tasks into the tasks table.
+
+        Args:
+            tasks: List of task dictionaries (must match tasks table schema)
+
+        Returns:
+            List of inserted task UUIDs
+
+        Raises:
+            EvalSupabaseError: If the insert fails
+        """
+        if not tasks:
+            return []
+
+        with traced_span("eval.supabase.bulk_insert_tasks", input={"count": len(tasks)}):
+            response = self._client.table("tasks").insert(tasks).execute()
+            if getattr(response, "error", None) is not None:
+                raise EvalSupabaseError(f"Failed to bulk insert tasks: {response.error}")
+
+            return [UUID(row["task_id"]) for row in response.data]
+
+    def bulk_create_eval_results(self, results: list[EvalResult]) -> None:
+        """Bulk create eval result records.
+
+        Args:
+            results: List of EvalResult objects
+
+        Raises:
+            EvalSupabaseError: If the insert fails
+        """
+        if not results:
+            return
+
+        with traced_span("eval.supabase.bulk_create_results", input={"count": len(results)}):
+            payloads = []
+            for result in results:
+                payloads.append(
+                    {
+                        "id": str(result.id),
+                        "eval_run_id": str(result.eval_run_id),
+                        "eval_task_id": result.eval_task_id,
+                        "gateway_task_id": str(result.gateway_task_id)
+                        if result.gateway_task_id
+                        else None,
+                        "work_area": result.work_area,
+                        "cost_tier": result.cost_tier,
+                        "status": result.status,
+                        "score": result.score,
+                        "raw_score": result.raw_score,
+                        "started_at": result.started_at.isoformat()
+                        if result.started_at
+                        else None,
+                        "finished_at": result.finished_at.isoformat()
+                        if result.finished_at
+                        else None,
+                        "duration_seconds": result.duration_seconds,
+                        "cost": result.cost,
+                        "traces": result.traces,
+                        "errors": result.errors,
+                        "reproduction": result.reproduction,
+                        "metadata": result.metadata,
+                        "agent_output": None,
+                    }
+                )
+
+            response = self._client.table("eval_results").insert(payloads).execute()
+            if getattr(response, "error", None) is not None:
+                raise EvalSupabaseError(f"Failed to bulk create eval results: {response.error}")
+
+    def update_eval_result(self, result: EvalResult, *, agent_output: str | None = None) -> None:
+        """Update an existing eval result row."""
+        status_value = result.status.value if isinstance(result.status, EvalStatus) else result.status
+        payload = {
+            "status": status_value,
+            "score": result.score,
+            "raw_score": result.raw_score,
+            "finished_at": result.finished_at.isoformat() if result.finished_at else None,
+            "duration_seconds": result.duration_seconds,
+            "cost": result.cost,
+            "errors": result.errors,
+            "agent_output": agent_output,
+            "metadata": self._clean_metadata(result.metadata),
+        }
+
+        response = self._client.table("eval_results").update(payload).eq("id", str(result.id)).execute()
+        if getattr(response, "error", None) is not None:
+            raise EvalSupabaseError(f"Failed to update eval result: {response.error}")
+
+    def get_incomplete_tasks_for_run(self, run_id: UUID) -> list[EvalResult]:
+        """Fetch pending/running eval results for a run, joined with task status.
+
+        Args:
+            run_id: The eval run UUID
+
+        Returns:
+            List of EvalResult objects that are not yet terminal.
+            The upstream task status is injected into metadata['_upstream_task'].
+        """
+        with traced_span("eval.supabase.get_incomplete", input={"run_id": str(run_id)}):
+            # Select results and join with tasks to get live status
+            response = (
+                self._client.table("eval_results")
+                .select("*, tasks!gateway_task_id(status, result_metadata, error)")
+                .eq("eval_run_id", str(run_id))
+                .in_("status", ["pending", "running"])
+                .execute()
+            )
+            rows = response.data or []
+
+            results = []
+            for row in rows:
+                # Reconstruct EvalResult
+                res = EvalResult(
+                    id=UUID(row["id"]),
+                    eval_run_id=UUID(row["eval_run_id"]),
+                    eval_task_id=row["eval_task_id"],
+                    gateway_task_id=UUID(row["gateway_task_id"])
+                    if row.get("gateway_task_id")
+                    else None,
+                    work_area=row.get("work_area", "general"),
+                    cost_tier=row.get("cost_tier", "cheap"),
+                    status=row.get("status", "pending"),
+                    score=row.get("score", 0.0),
+                    raw_score=row.get("raw_score", {}),
+                    started_at=(
+                        datetime.fromisoformat(row["started_at"].replace("Z", "+00:00"))
+                        if row.get("started_at")
+                        else None
+                    ),
+                    finished_at=(
+                        datetime.fromisoformat(row["finished_at"].replace("Z", "+00:00"))
+                        if row.get("finished_at")
+                        else None
+                    ),
+                    duration_seconds=row.get("duration_seconds"),
+                    cost=row.get("cost", {}),
+                    traces=row.get("traces", {}),
+                    errors=row.get("errors", {}),
+                    reproduction=row.get("reproduction", {}),
+                    metadata=row.get("metadata", {}),
+                )
+
+                # Inject upstream task data for the monitor loop
+                upstream = self._normalize_task_join(row.get("tasks"))
+                if upstream is not None:
+                    res.metadata["_upstream_task"] = upstream
+
+                results.append(res)
+
+            return results
+
+    @staticmethod
+    def _normalize_task_join(task_data: Any) -> dict[str, Any] | None:
+        """Normalize joined tasks payload into a single dict."""
+        if isinstance(task_data, dict) and task_data:
+            return task_data
+
+        if isinstance(task_data, list):
+            for entry in task_data:
+                if isinstance(entry, dict) and entry:
+                    return entry
+        return None
+
+    def get_tasks_for_eval(self, eval_run_id: UUID, eval_task_id: str) -> list[dict[str, Any]]:
+        with traced_span(
+            "eval.supabase.get_tasks_for_eval",
+            input={"run_id": str(eval_run_id), "eval_task_id": eval_task_id},
+        ):
+            response = (
+                self._client.table("tasks")
+                .select(
+                    "task_id, manager_id, assigned_agent_ids, status, result_metadata, error, created_at, updated_at",
+                )
+                .filter("result_metadata->>eval_run_id", "eq", str(eval_run_id))
+                .filter("result_metadata->>eval_task_id", "eq", eval_task_id)
+                .execute()
+            )
+            return response.data or []
+
+    def get_task_by_id(self, task_id: str) -> dict[str, Any] | None:
+        with traced_span("eval.supabase.get_task_by_id", input={"task_id": task_id}):
+            response = (
+                self._client.table("tasks")
+                .select(
+                    "task_id, manager_id, assigned_agent_ids, status, result_metadata, error, created_at, updated_at",
+                )
+                .eq("task_id", task_id)
+                .limit(1)
+                .execute()
+            )
+            rows = response.data or []
+            if not rows:
+                return None
+            return rows[0]
+
+    def get_agents_by_ids(self, agent_ids: list[str]) -> list[dict[str, Any]]:
+        if not agent_ids:
+            return []
+
+        serialized_ids = [str(agent_id) for agent_id in agent_ids]
+        with traced_span("eval.supabase.get_agents_by_ids", input={"count": len(serialized_ids)}):
+            response = (
+                self._client.table("agents")
+                .select(
+                    "agent_id, agent_type, status, parent_agent_id, result, error, completed_at, updated_at",
+                )
+                .in_("agent_id", serialized_ids)
+                .execute()
+            )
+            return response.data or []
+
+    def get_engineers_for_manager(self, manager_id: str) -> list[dict[str, Any]]:
+        with traced_span("eval.supabase.get_engineers_for_manager", input={"manager_id": manager_id}):
+            response = (
+                self._client.table("agents")
+                .select(
+                    "agent_id, agent_type, status, parent_agent_id, result, error, completed_at, updated_at",
+                )
+                .eq("parent_agent_id", manager_id)
+                .eq("agent_type", "engineer")
+                .execute()
+            )
+            return response.data or []
+
+    def get_messages_for_agent(self, agent_id: str, limit: int = 2000) -> list[dict[str, Any]]:
+        with traced_span("eval.supabase.get_messages_for_agent", input={"agent_id": agent_id}):
+            response = (
+                self._client.table("agent_messages")
+                .select("agent_id, turn_number, role, content, timestamp")
+                .eq("agent_id", agent_id)
+                .order("turn_number", desc=False)
+                .limit(limit)
+                .execute()
+            )
+            return response.data or []
+
+    @staticmethod
+    def _clean_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+        if not metadata:
+            return {}
+        cleaned: dict[str, Any] = {}
+        for key, value in metadata.items():
+            if key == "_upstream_task":
+                continue
+            cleaned[key] = value
+        return cleaned
+
 
 __all__ = [
     "EvalSupabaseClient",
