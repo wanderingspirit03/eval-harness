@@ -468,6 +468,15 @@ class EvaluationController:
         with traced_span(
             "eval.controller.seed_suite", input={"suite": suite_config.name}
         ):
+            # 0. Cleanup legacy runs to prevent queue blocking
+            # (Only for local dev environments to keep things clean)
+            if os.environ.get("APP_ENV") == "local":
+                try:
+                    await loop.run_in_executor(None, self._cleanup_legacy_pending_tasks)
+                except Exception as e:
+                    # Don't fail the new run if cleanup fails
+                    pass
+
             # 1. Fetch questions
             questions = await loop.run_in_executor(
                 None,
@@ -546,19 +555,55 @@ class EvaluationController:
 
             return run
 
-    async def monitor_eval_run(self, run_id: UUID) -> EvalRunSummary:
+    def _cleanup_legacy_pending_tasks(self) -> None:
+        """Cleanup stale pending tasks from previous local runs.
+
+        This prevents 'head of line blocking' where old, unclaimed tasks
+        clog the manager's poll queue (limit=10) and prevent new tasks
+        from being seen.
+        """
+        # Mark old pending eval tasks as killed
+        # Note: We only target 'eval' source tasks to be safe
+        self._supabase.client.table("tasks").update({"status": "killed"}).eq("status", "pending").eq(
+            "result_metadata->>source", "eval"
+        ).execute()
+
+    async def monitor_eval_run(self, run_id: UUID, timeout_minutes: int = 60) -> EvalRunSummary:
         """Monitor an active eval run until completion.
 
         Args:
             run_id: The eval run UUID
+            timeout_minutes: Maximum time to wait for run completion (default: 60)
 
         Returns:
             Final run summary
         """
         loop = asyncio.get_running_loop()
         question_cache: dict[str, EvalQuestion] = {}
+        
+        start_time = datetime.now(timezone.utc)
+        timeout_seconds = timeout_minutes * 60
 
         while True:
+            # Check for global timeout
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+            if elapsed > timeout_seconds:
+                # Mark run as timed out
+                run = await loop.run_in_executor(None, self._supabase.get_eval_run, run_id)
+                if run:
+                    run.status = EvalStatus.TIMED_OUT
+                    run.finished_at = datetime.now(timezone.utc)
+                    await loop.run_in_executor(
+                        None,
+                        partial(
+                            self._supabase.update_eval_run,
+                            run.id,
+                            status=run.status,
+                            finished_at=run.finished_at,
+                        ),
+                    )
+                break
+
             # 1. Get incomplete results joined with current task status
             incomplete_results = await loop.run_in_executor(
                 None, self._supabase.get_incomplete_tasks_for_run, run_id

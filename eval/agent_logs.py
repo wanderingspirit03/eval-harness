@@ -241,26 +241,39 @@ def _last_non_empty_line(text: str) -> str | None:
 
 
 def _select_preferred_line(text: str) -> str | None:
+    """Select the most likely final answer line from a text block."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         return None
 
-    # Highest priority: explicit "final answer" markers
+    # Highest priority: explicit "final answer" markers (case-insensitive)
     for line in reversed(lines):
         lowered = line.lower()
-        if "final answer" in lowered:
+        if "final answer" in lowered or "answer:" in lowered:
+            # If the line is "Final Answer: XYZ", return "XYZ"
             if ":" in line:
                 suffix = line.split(":", 1)[1].strip()
                 if suffix:
                     return suffix
+            # Otherwise return the whole line if it seems substantial
             return line
 
-    # Next: short, declarative lines (≤12 words)
+    # Next priority: Look for specific format indicators used by engineers
+    # e.g. XML tags like <answer>...</answer> or JSON blocks
     for line in reversed(lines):
-        if len(line.split()) <= 12:
+        if line.startswith("<answer>") and line.endswith("</answer>"):
+            return line[8:-9].strip()
+        if line.startswith("{") and line.endswith("}") and "answer" in line:
+            # Simple JSON heuristic
             return line
 
-    # Fallback: original behavior (last non-empty line)
+    # Priority: Short, declarative lines (≤20 words) at the end often contain the answer
+    # Relaxed from 12 to 20 to capture slightly longer sentences
+    for line in reversed(lines[:5]): # Check last 5 lines
+        if len(line.split()) <= 20:
+            return line
+
+    # Fallback: The very last non-empty line
     return lines[-1]
 
 
